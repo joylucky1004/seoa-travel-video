@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import base64
+import json
 import secrets
+from datetime import datetime, timezone
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
@@ -13,6 +15,8 @@ from pydantic import BaseModel
 from app.config import PROJECT_ROOT, get_settings
 from app.models import ReelRequest
 from app.services import character, editor, pipeline
+from app.services.higgsfield import GenerationRequest, LiveHiggsfieldClient
+from app.services.higgsfield.models import PROFILES, resolve_resolution
 
 
 app = FastAPI(title="SEOA Travel AI Video Automation", version="0.1.0")
@@ -48,6 +52,18 @@ def healthz():
     return {"ok": True}
 
 
+def _safe_generation_settings() -> dict:
+    try:
+        return pipeline.generation_settings()
+    except ValueError as exc:  # unknown model configured
+        return {"model": None, "warning": str(exc)}
+
+
+def _password_set() -> bool:
+    pw = get_settings().app_password
+    return bool(pw and pw.get_secret_value())
+
+
 @app.get("/api/status")
 def status():
     # Only secret-free facts. Never return key values.
@@ -57,8 +73,9 @@ def status():
         "higgsfield_credentials": get_settings().credentials_status,  # ok | incomplete | missing
         "paid_calls_allowed": get_settings().allow_paid_api_calls,
         "password_protected": bool(get_settings().app_password and get_settings().app_password.get_secret_value()),
-        "model": get_settings().higgsfield_model if get_settings().is_live else "mock",
-        "video_resolution_tier": get_settings().higgsfield_resolution,
+        "generation": _safe_generation_settings(),
+        "max_clips_per_job": get_settings().max_clips_per_job,
+        "max_usd_per_job": get_settings().max_usd_per_job,
         "ffmpeg_available": editor.ffmpeg_available(),
         "cta_text": get_settings().cta_text,
         "resolution": f"{get_settings().video_width}x{get_settings().video_height}",
@@ -108,9 +125,89 @@ def remove_reference(name: str):
     return {"deleted": name}
 
 
+# --- Models / cost ---------------------------------------------------------
+class ModelChoice(BaseModel):
+    model: str
+
+
+@app.get("/api/models")
+def list_models():
+    """Documented capabilities of the cost-saving model allowlist (no API calls)."""
+    return {"selected": pipeline.selected_model(),
+            "models": [p.info() for p in PROFILES.values()],
+            "last_comparison": _load_comparison()}
+
+
+def _comparison_file():
+    return get_settings().data_path / "model_compare.json"
+
+
+def _load_comparison():
+    try:
+        return json.loads(_comparison_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+@app.post("/api/models/compare")
+def compare_models():
+    """Free cost comparison via POST /estimate/{model}. Generates nothing, spends no credits."""
+    s = get_settings()
+    if not _password_set():
+        raise HTTPException(403, "비용 비교는 Higgsfield 키를 사용하므로 APP_PASSWORD 설정 후 사용할 수 있습니다.")
+    if s.credentials_status != "ok":
+        raise HTTPException(400, "Higgsfield API 키가 없거나 형식이 맞지 않습니다 (HF_API_KEY=KEY_ID:KEY_SECRET).")
+    refs = character.list_references()
+    if not refs:
+        raise HTTPException(400, "SEOA 레퍼런스 이미지를 1장 이상 등록해 주세요.")
+    client = LiveHiggsfieldClient(s, estimate_only=True)
+    try:
+        ref_urls = client.prepare_references(refs[:1])
+    except Exception as exc:
+        raise HTTPException(502, f"레퍼런스 업로드 실패: {exc}")
+    rows = []
+    for prof in PROFILES.values():
+        resolution, _ = resolve_resolution(prof, "")
+        req = GenerationRequest(model=prof.id, prompt="SEOA, a Korean woman, smiles at a cafe window. 9:16 travel reel.",
+                                negative_prompt="", reference_urls=ref_urls,
+                                duration=prof.min_duration, resolution=resolution)
+        row = {"model": prof.id, "label": prof.label, "duration": prof.min_duration,
+               "resolution": resolution, "usd": None, "usd_per_second": None, "error": ""}
+        try:
+            row["usd"] = client.estimate_usd(req)
+            if row["usd"] is not None:
+                row["usd_per_second"] = round(row["usd"] / prof.min_duration, 4)
+        except Exception as exc:
+            row["error"] = str(exc)[:200]
+        rows.append(row)
+    rows.sort(key=lambda r: (r["usd"] is None, r["usd"] if r["usd"] is not None else 0))
+    result = {"checked_at": datetime.now(timezone.utc).isoformat(), "rows": rows,
+              "cheapest": next((r["model"] for r in rows if r["usd"] is not None), None)}
+    _comparison_file().write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+    return result
+
+
+@app.post("/api/models/select")
+def choose_model(body: ModelChoice):
+    """Manual model choice only — the app never switches models on its own."""
+    try:
+        return {"selected": pipeline.select_model(body.model), "settings": pipeline.generation_settings()}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/api/preview")
+def preview(req: ReelRequest):
+    """Free: shows the exact prompts/request bodies and the scene timeline. No API calls."""
+    try:
+        return pipeline.preview(req)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
 # --- Jobs ------------------------------------------------------------------
 def _require_password_for_live() -> None:
-    if get_settings().is_live and not (get_settings().app_password and get_settings().app_password.get_secret_value()):
+    if get_settings().is_live and not _password_set():
         raise HTTPException(403, "live 모드에서는 크레딧 보호를 위해 APP_PASSWORD 환경변수를 먼저 설정해야 합니다.")
 
 

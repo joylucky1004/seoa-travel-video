@@ -12,10 +12,12 @@ StatusCallback = Callable[[str, str | None], None]
 
 @dataclass
 class GenerationRequest:
+    model: str
     prompt: str
     negative_prompt: str
     reference_urls: list[str]
-    duration_seconds: float
+    duration: int             # seconds actually requested from the provider
+    resolution: str | None
     aspect_ratio: str = "9:16"
     extra: dict = field(default_factory=dict)
 

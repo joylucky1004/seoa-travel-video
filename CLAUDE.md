@@ -6,6 +6,10 @@
 - `app/services/higgsfield/live.py` follows the official docs (https://docs.higgsfield.ai).
   Change endpoints or request fields only after re-checking those docs; don't guess.
 - Paid generation starts only via `POST /api/jobs/{id}/approve` (per-job user approval).
+- Credit saving is the top priority: keep the cheapest settings (≤720p, model minimum duration,
+  audio off), the model allowlist in `higgsfield/models.py`, no automatic retries of submits,
+  no automatic model switching, `MAX_CLIPS_PER_JOB=1` and `MAX_USD_PER_JOB` caps, clip reuse.
+- Subtitles, joining and the CTA are FFmpeg-only; never call Higgsfield for editing.
 - Never commit `.env`, API keys, reference photos (`assets/characters/seoa/references/`) or `data/`.
 - Output format is always vertical 9:16, 1080x1920, H.264/AAC.
 - Run tests with `python -m pytest -q` before committing.

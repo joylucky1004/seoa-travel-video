@@ -33,6 +33,16 @@
     <button id="save-character" class="btn secondary">규칙 저장</button>
   </section>
 
+  <!-- Cost saving -->
+  <section class="card wide">
+    <h2>크레딧 절약 설정</h2>
+    <p id="gen-settings" class="hint"></p>
+    <div class="row-wrap">
+      <button id="compare-models" class="btn secondary">모델별 비용 비교 (무료 견적 · 생성 없음)</button>
+    </div>
+    <div id="compare-result"></div>
+  </section>
+
   <!-- Reel builder -->
   <section class="card">
     <h2>새 릴스 (9:16)</h2>
@@ -51,7 +61,10 @@
     </div>
     <div id="scenes"></div>
 
+    <label class="check"><input id="dry-run" type="checkbox" checked> MOCK 미리보기로 실행 (무료 · 크레딧 사용 없음)</label>
     <label class="check"><input id="add-cta" type="checkbox" checked> 마지막에 CTA “<span id="cta-text">Follow @staypick.kr</span>” 추가</label>
+    <button id="preview-btn" class="btn secondary">프롬프트 · 장면 구성 미리보기 (무료)</button>
+    <div id="preview-out"></div>
     <button id="create-job" class="btn primary">릴스 만들기</button>
     <p id="server-info" class="hint"></p>
     <p id="form-msg" class="hint"></p>
@@ -67,8 +80,8 @@
 <template id="scene-tpl">
   <div class="scene">
     <div class="scene-top">
-      <strong class="scene-no"></strong>
-      <select class="duration"><option value="5">5초</option><option value="8">8초</option><option value="10">10초</option></select>
+      <label class="check pick"><input class="pick-scene" type="checkbox" checked> <strong class="scene-no"></strong></label>
+      <select class="duration" aria-label="타임라인 길이"><option value="2">2초</option><option value="3">3초</option><option value="4">4초</option><option value="5">5초</option><option value="8">8초</option></select>
       <button class="btn danger small remove">삭제</button>
     </div>
     <textarea class="visual" rows="2" placeholder="영상 내용 (예: SEOA opens the curtains revealing an ocean view)"></textarea>

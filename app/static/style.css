@@ -62,3 +62,13 @@ a { color: #8ab4ff; }
 .approve-box .row .btn { flex: 1; }
 .status.awaiting_approval { background: #4a3317; color: #ffc27a; }
 .status.canceled { background: #2a2f3b; color: var(--muted); }
+.row-wrap { display: flex; flex-wrap: wrap; gap: 8px; }
+.cmp { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 15px; }
+.cmp th, .cmp td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.cmp tr.sel td { color: #7ee2a8; }
+.preview { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-top: 10px; }
+.preview details { border-top: 1px solid var(--line); padding: 8px 0; }
+.preview details.muted { opacity: .55; }
+.preview summary { cursor: pointer; }
+.preview pre { white-space: pre-wrap; word-break: break-word; font-size: 13px; background: #12141a; padding: 10px; border-radius: 8px; }
+.check.pick { margin: 0; }

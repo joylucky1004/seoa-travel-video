@@ -23,6 +23,10 @@ class ReelRequest(BaseModel):
                                          description="Per-reel additions to SEOA's consistency rules.")
     scenes: list[Scene] = Field(..., min_length=1, max_length=12)
     add_cta: bool = True
+    # Free run with placeholder clips even when the server is in live mode.
+    dry_run: bool = False
+    # Generate only these scenes (0-based). None = all. Live jobs are capped by MAX_CLIPS_PER_JOB.
+    scene_indices: list[int] | None = None
 
 
 class JobStatus(str, Enum):
@@ -44,6 +48,9 @@ class SceneState(BaseModel):
     estimate_usd: float | None = None
     error: str = ""
     clip_ready: bool = False
+    reused: bool = False          # clip taken from the cache, no credits spent
+    cache_key: str | None = None
+    generated_seconds: int | None = None
 
 
 class ClipResult(BaseModel):
@@ -59,6 +66,8 @@ class Job(BaseModel):
     request: ReelRequest
     status: JobStatus = JobStatus.queued
     mode: str = "mock"
+    model: str = "mock"           # fixed at creation; approval binds to this model
+    resolution: str | None = None
     progress: float = 0.0
     message: str = ""
     scenes: list[SceneState] = []

@@ -49,7 +49,7 @@ function addScene(v = {}) {
   $(".visual", node).value = v.visual || "";
   $(".subtitle", node).value = v.subtitle || "";
   $(".camera", node).value = v.camera || "";
-  $(".duration", node).value = String(v.duration || 5);
+  $(".duration", node).value = String(v.duration || 3);
   $(".remove", node).onclick = () => { node.remove(); renumber(); };
   $("#scenes").appendChild(node);
   renumber();
@@ -64,18 +64,41 @@ $("#add-scene").onclick = () => addScene();
 ].forEach(addScene);
 
 // ---------- Jobs ----------
-$("#create-job").onclick = async () => {
-  const scenes = [...document.querySelectorAll(".scene")].map((el) => ({
+function reelBody() {
+  const els = [...document.querySelectorAll(".scene")];
+  const scenes = els.map((el) => ({
     visual_prompt: $(".visual", el).value.trim(),
     subtitle_ko: $(".subtitle", el).value.trim(),
     camera: $(".camera", el).value.trim(),
     duration_seconds: Number($(".duration", el).value),
   }));
-  const body = {
+  const picked = els.map((el, i) => ($(".pick-scene", el).checked ? i : -1)).filter((i) => i >= 0);
+  return {
     title: $("#title").value.trim(), location: $("#location").value.trim(),
     style_notes: $("#style").value.trim(), extra_consistency_notes: $("#extra-rules").value.trim(),
-    add_cta: $("#add-cta").checked, scenes,
+    add_cta: $("#add-cta").checked, dry_run: $("#dry-run").checked,
+    scene_indices: picked.length === scenes.length ? null : picked, scenes,
   };
+}
+
+$("#preview-btn").onclick = async () => {
+  const out = $("#preview-out");
+  out.innerHTML = `<p class="hint">미리보기 생성 중…</p>`;
+  try {
+    const p = await api("/api/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(reelBody()) });
+    out.innerHTML = `<div class="preview">
+      <p><strong>${esc(p.settings.label)}</strong> · ${esc(p.settings.resolution)} · 레퍼런스 ${p.reference_images}장 · 실제 생성 최대 ${p.max_clips_per_job}개 장면</p>
+      ${p.warnings.map((w) => `<p class="error">${esc(w)}</p>`).join("")}
+      ${p.scenes.map((sc) => `<details ${sc.selected ? "" : "class=muted"}>
+        <summary>#${sc.index + 1} ${sc.selected ? "" : "(제외)"} · 생성 ${sc.generated_seconds}초 → 타임라인 ${sc.timeline_seconds}초
+          ${sc.reusable ? `<span class="status done">재사용 (무료)</span>` : ""} — ${esc(sc.subtitle_ko)}</summary>
+        <pre>${esc(JSON.stringify(sc.request_body, null, 2))}</pre></details>`).join("")}
+      ${p.cta_text ? `<p class="hint">마지막 CTA: ${esc(p.cta_text)} (서버에서 FFmpeg로 삽입)</p>` : ""}</div>`;
+  } catch (err) { out.innerHTML = `<p class="error">${esc(err.message)}</p>`; }
+};
+
+$("#create-job").onclick = async () => {
+  const body = reelBody();
   const btn = $("#create-job");
   btn.disabled = true; $("#form-msg").textContent = "작업 생성 중…";
   try {
@@ -105,7 +128,9 @@ function sceneRows(j) {
     const cls = sc.clip_ready ? "done" : ["failed", "nsfw", "timeout", "canceled"].includes(sc.status) ? "failed" : "";
     return `<li class="scene-row">
       <div><strong>#${sc.index + 1}</strong> <span class="status ${cls}">${SCENE_KO[sc.status] || esc(sc.status)}</span>
-        ${j.mode === "live" && sc.estimate_usd != null ? `<span class="hint">예상 ${usd(sc.estimate_usd)}</span>` : ""}
+        ${sc.reused ? `<span class="status done">재사용 · $0</span>` : ""}
+        ${j.mode === "live" && sc.estimate_usd != null && !sc.reused ? `<span class="hint">예상 ${usd(sc.estimate_usd)}</span>` : ""}
+        ${sc.generated_seconds ? `<span class="hint">${sc.generated_seconds}초 생성</span>` : ""}
         ${sc.clip_ready ? `<a href="/api/jobs/${j.id}/clips/${sc.index}" download>클립 다운로드</a>` : ""}</div>
       <div class="hint">${esc(scene.subtitle_ko || scene.visual_prompt || "")}</div>
       ${sc.error ? `<div class="error">${esc(sc.error)}</div>` : ""}
@@ -117,7 +142,8 @@ function jobActions(j) {
   if (j.status === "awaiting_approval") {
     return `<div class="approve-box">
       <p><strong>실제 Higgsfield 생성 승인</strong> — 크레딧이 사용됩니다.<br>
-      장면 ${j.scenes.filter((s) => !s.clip_ready).length}개 · 예상 비용 <strong>${usd(j.estimate_total_usd)}</strong></p>
+      모델 ${esc(j.model)} · ${esc(j.resolution || "")} · 생성 ${j.scenes.filter((s) => !s.clip_ready).length}개 장면<br>
+      예상 비용 <strong>${usd(j.estimate_total_usd)}</strong> (Higgsfield 견적, USD)</p>
       <div class="row"><button class="btn primary" data-act="approve" data-id="${j.id}">승인하고 생성</button>
       <button class="btn secondary" data-act="cancel" data-id="${j.id}">취소</button></div></div>`;
   }
@@ -145,6 +171,7 @@ async function loadJobs() {
     <div class="job">
       <div class="job-head"><strong>${esc(j.request.title)}</strong>
         <span class="status ${j.status}">${STATUS_KO[j.status] || j.status} · ${j.mode.toUpperCase()}</span></div>
+      ${j.mode === "live" ? `<span class="hint">모델 ${esc(j.model)} · ${esc(j.resolution || "")}</span>` : ""}
       <progress max="1" value="${j.progress}"></progress>
       <span class="hint">${esc(j.message)}</span>
       <ul class="scene-list">${sceneRows(j)}</ul>
@@ -161,9 +188,48 @@ api("/api/status").then((s) => {
   if (!s.ffmpeg_available) warn.push("서버에 FFmpeg가 설치되어 있지 않습니다.");
   if (s.mode === "live" && !s.password_protected) warn.push("live 모드에는 APP_PASSWORD 설정이 필요합니다.");
   if (s.higgsfield_credentials === "incomplete") warn.push("Higgsfield 키 형식이 KEY_ID:KEY_SECRET 이 아닙니다.");
-  $("#create-job").textContent = s.mode === "live" ? "비용 확인하기 (생성 전 승인 필요)" : "릴스 만들기 (MOCK · 무료)";
-  $("#server-info").textContent = s.mode === "live" ? `모델: ${s.model} · ${s.video_resolution_tier} · 9:16` : "MOCK 모드: 크레딧 사용 없음";
+  const g = s.generation || {};
+  if (g.warning) warn.push(g.warning);
+  const syncButton = () => {
+    const real = s.mode === "live" && !$("#dry-run").checked;
+    $("#create-job").textContent = real ? `비용 확인하기 (선택 장면 최대 ${s.max_clips_per_job}개 · 승인 필요)` : "릴스 만들기 (MOCK · 무료)";
+  };
+  $("#dry-run").onchange = syncButton;
+  if (s.mode !== "live") { $("#dry-run").checked = true; $("#dry-run").disabled = true; }
+  syncButton();
+  $("#server-info").textContent = s.mode === "live" ? "LIVE 서버: 체크를 해제하면 실제 생성 (비용 확인 → 승인 후)" : "MOCK 모드: 크레딧 사용 없음";
+  $("#gen-settings").innerHTML = g.model
+    ? `현재 모델 <strong>${esc(g.label)}</strong> (${esc(g.model)}) · 해상도 <strong>${esc(g.resolution)}</strong> · 생성 길이 <strong>${g.duration_policy === "minimum" ? `최소 ${g.min_duration}초` : "장면 길이"}</strong> · 작업당 최대 ${s.max_clips_per_job}개 장면 · 한도 $${Number(s.max_usd_per_job).toFixed(2)}`
+    : esc(g.warning || "모델 설정 오류");
   if (warn.length) $("#form-msg").textContent = "⚠️ " + warn.join(" ");
 });
+// ---------- Model cost comparison ----------
+function renderCompare(c, selected) {
+  if (!c) return "";
+  return `<table class="cmp"><thead><tr><th>모델</th><th>설정</th><th>견적</th><th></th></tr></thead><tbody>
+    ${c.rows.map((r) => `<tr class="${r.model === selected ? "sel" : ""}">
+      <td>${esc(r.label)}</td><td>${r.duration}초 · ${esc(r.resolution)}</td>
+      <td>${r.usd != null ? usd(r.usd) : `<span class="error">${esc(r.error || "?")}</span>`}</td>
+      <td>${r.model === selected ? "사용 중" : r.usd != null ? `<button class="btn secondary small" data-model="${esc(r.model)}">사용</button>` : ""}</td></tr>`).join("")}
+    </tbody></table><p class="hint">견적 시각 ${esc(c.checked_at)} · 가장 저렴: ${esc(c.cheapest || "-")}. 모델은 직접 선택할 때만 바뀝니다.</p>`;
+}
+async function loadModels() {
+  try { const m = await api("/api/models"); $("#compare-result").innerHTML = renderCompare(m.last_comparison, m.selected); } catch {}
+}
+$("#compare-models").onclick = async (e) => {
+  e.target.disabled = true;
+  $("#compare-result").innerHTML = `<p class="hint">무료 견적 요청 중… (영상은 생성되지 않습니다)</p>`;
+  try { await api("/api/models/compare", { method: "POST" }); await loadModels(); }
+  catch (err) { $("#compare-result").innerHTML = `<p class="error">${esc(err.message)}</p>`; }
+  e.target.disabled = false;
+};
+$("#compare-result").addEventListener("click", async (e) => {
+  const model = e.target.dataset?.model;
+  if (!model || !confirm(`${model} 모델로 바꿀까요?`)) return;
+  try { await api("/api/models/select", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model }) }); location.reload(); }
+  catch (err) { alert(err.message); }
+});
+
 loadCharacter();
 loadJobs();
+loadModels();

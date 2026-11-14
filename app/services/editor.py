@@ -42,10 +42,33 @@ def _encode_args(p: dict) -> list[str]:
             "-pix_fmt", p["pix_fmt"]]
 
 
+def probe_duration(path: Path) -> float | None:
+    s = get_settings()
+    proc = subprocess.run([s.ffprobe_binary, "-v", "error", "-show_entries", "format=duration",
+                           "-of", "default=nw=1:nk=1", str(path)], capture_output=True, text=True)
+    try:
+        return float(proc.stdout.strip())
+    except ValueError:
+        return None
+
+
+MAX_SLOWDOWN = 2.0  # stretch short (cheap) clips at most 2x, then hold the last frame
+
+
 def normalize_clip(src: Path, dst: Path, duration: float) -> None:
+    """Scale/crop to 9:16 and fit the clip to the scene length on the server.
+
+    Clips generated at the model's minimum length are slowed down (max 2x) and the last
+    frame is held, so short, cheap generations still fill the timeline — no extra API calls."""
     s, p = get_settings(), load_presets()["reels_9x16"]
     w, h = s.video_width, s.video_height
-    vf = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},"
+    actual = probe_duration(src)
+    stretch = ""
+    if actual and actual < duration - 0.05:
+        factor = min(duration / actual, MAX_SLOWDOWN)
+        hold = max(duration - actual * factor, 0) + 0.1
+        stretch = f"setpts={factor:.4f}*PTS,tpad=stop_mode=clone:stop_duration={hold:.3f},"
+    vf = (f"{stretch}scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},"
           f"fps={s.video_fps},setsar=1,format=yuv420p")
     _run([s.ffmpeg_binary, "-y", "-hide_banner", "-loglevel", "error", "-i", str(src),
           "-t", f"{duration:.3f}", "-vf", vf, "-an", *_encode_args(p), str(dst)])

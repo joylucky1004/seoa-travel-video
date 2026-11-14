@@ -16,7 +16,11 @@ SEOA 캐릭터가 등장하는 여행 인스타그램 릴스(9:16)를 자동으�
 | SEOA 레퍼런스 이미지 업로드 / 삭제 | ✅ |
 | 캐릭터 일관성 규칙 편집 → 모든 프롬프트에 자동 삽입 | ✅ |
 | 9:16 (1080×1920) 영상 생성 파이프라인 | ✅ |
-| Higgsfield 공식 API 연동 (Seedance 2.0 Reference-to-Video) | ✅ 실제 생성은 승인 후 |
+| Higgsfield 공식 API 연동 (레퍼런스 기반 9:16 모델) | ✅ 실제 생성은 승인 후 |
+| 크레딧 절약 기본값: 최저 해상도(≤720p) · 최소 길이 · 오디오 끔 · 1개 장면 테스트 | ✅ |
+| 모델별 무료 비용 비교 → 직접 선택 (자동 전환 없음) | ✅ |
+| 무료 프롬프트 · 장면 구성 미리보기, MOCK 실행 | ✅ |
+| 같은 장면 재사용 (중복 생성 방지) | ✅ |
 | 작업 전 무료 비용 견적 → iPad에서 승인 / 취소 | ✅ |
 | 장면별 생성 상태 · 오류 표시, 실패 장면만 다시 시도 | ✅ |
 | 장면 클립 · 최종 릴스 MP4 다운로드 | ✅ |
@@ -92,34 +96,46 @@ pip install -r requirements.txt
 한글 폰트 파일을 넣고, `.env`의 `SUBTITLE_FONT_NAME`을 폰트 이름과 맞춰주세요.
 폰트가 없으면 시스템에 설치된 한글 폰트로 대체됩니다.
 
+## 크레딧 절약 규칙
+
+| 규칙 | 동작 |
+|---|---|
+| 가장 저렴한 설정 | 모델마다 문서상 최저 해상도(720p 이하) · 최소 길이 · 오디오 끔으로 요청 |
+| 모델 | 허용 목록(`app/services/higgsfield/models.py`)만 사용. 비용 비교 후 **직접 선택할 때만** 변경 |
+| 무료 검증 | "프롬프트 · 장면 구성 미리보기"와 MOCK 실행은 API를 호출하지 않음 |
+| 1개 장면 테스트 | Live 작업은 `MAX_CLIPS_PER_JOB`(기본 1)개 장면까지만 생성 |
+| 비용 확인 · 승인 | 무료 견적 → 예상 비용 표시 → **승인하고 생성**을 눌러야 요청 전송 |
+| 비용 한도 | 견적이 `MAX_USD_PER_JOB`(기본 $1.00)를 넘으면 승인 불가 |
+| 재사용 | 모델 · 설정 · 프롬프트 · 레퍼런스가 같은 장면은 저장된 클립을 재사용 ($0) |
+| 재시도 | 실패 시 자동 재시도 없음. "실패 장면 다시 시도" → 다시 견적 → 다시 승인 |
+| 편집 | 자막 · 장면 연결 · CTA · 길이 맞춤(최대 2배 슬로모션 + 마지막 장면 정지)은 서버 FFmpeg로 처리 |
+
+> 공식 문서에는 모델별 가격이 없고 "Mini" 모델도 없습니다. 실제 가격은 계정마다 다를 수 있어
+> "모델별 비용 비교" 버튼이 무료 견적 API(`POST /estimate/{model}`)로 확인합니다.
+> 그 전까지 기본 모델은 문서상 해상도가 가장 낮고(480p) 최소 길이가 가장 짧은(1초)
+> `xai/grok-imagine-video/v1.5/reference-to-video`입니다.
+
 ## Higgsfield Live 모드 설정 (Render)
 
-공식 문서(https://docs.higgsfield.ai) 기준으로 구현했습니다.
-
-| 항목 | 값 |
-|---|---|
-| API 주소 | `https://api.higgsfield.ai` |
-| 인증 | `Authorization: Key KEY_ID:KEY_SECRET` (서버에서만 사용) |
-| 기본 모델 | `bytedance/seedance-2.0/reference-to-video` |
-| 전달 값 | 프롬프트(카메라 무빙 포함), 레퍼런스 이미지 최대 9장, 길이 4–15초, `9:16`, 해상도 |
-| 흐름 | 레퍼런스 업로드 → 비용 견적(무료) → **승인** → 생성 요청 → 상태 확인 → 다운로드 → FFmpeg 편집 |
+공식 문서(https://docs.higgsfield.ai) 기준으로 구현했습니다. 인증은
+`Authorization: Key KEY_ID:KEY_SECRET`이며 서버에서만 사용합니다.
 
 Render 대시보드 → 서비스 → **Environment**에서 아래 값을 설정합니다.
 
 | 변수 | 설명 |
 |---|---|
-| `HF_API_KEY` | Higgsfield Console의 키 ID와 시크릿을 `KEY_ID:KEY_SECRET` 형태로 입력 (또는 `HF_API_KEY_ID` + `HF_API_KEY_SECRET`) |
-| `APP_PASSWORD` | **필수.** 없으면 Live 모드에서 작업이 거부됩니다 (아이디 `seoa`) |
+| `HF_API_KEY` | Higgsfield Console의 `KEY_ID:KEY_SECRET` (또는 `HF_API_KEY_ID` + `HF_API_KEY_SECRET`) |
+| `APP_PASSWORD` | **필수.** 없으면 Live 작업과 비용 비교가 거부됩니다 (아이디 `seoa`) |
 | `HIGGSFIELD_MODE` | `live` |
 | `ALLOW_PAID_API_CALLS` | `true` |
-| `HIGGSFIELD_RESOLUTION` | 선택. 기본 `1080p` (`480p`/`720p`/`1080p`/`4k`) |
+| `HIGGSFIELD_MODEL` | 선택. 비용 비교로 확인한 모델을 고정하려면 입력 (재시작해도 유지) |
 
 설정 후에도 영상은 자동으로 만들어지지 않습니다. 작업 목록에서 예상 비용을 확인하고
 **승인하고 생성**을 눌러야 크레딧이 사용됩니다. 실패하거나 검수(NSFW)에 걸린 요청은
 Higgsfield가 과금하지 않습니다.
 
-> Render 무료 플랜은 디스크가 영구적이지 않아 재시작 · 재배포 시 레퍼런스 이미지와 결과물이 지워집니다.
-> 완성된 영상은 바로 다운로드하세요. Higgsfield 쪽 결과 파일도 7일 후 삭제됩니다.
+> Render 무료 플랜은 디스크가 영구적이지 않아 재시작 · 재배포 시 레퍼런스 이미지, 결과물,
+> 재사용 캐시, UI에서 고른 모델이 지워집니다. 고른 모델은 `HIGGSFIELD_MODEL`에도 넣어두세요.
 
 ## 보안 · 크레딧 안전장치
 

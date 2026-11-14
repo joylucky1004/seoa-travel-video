@@ -38,14 +38,23 @@ class Settings(BaseSettings):
     higgsfield_api_secret: SecretStr | None = Field(
         None, validation_alias=AliasChoices("HF_API_KEY_SECRET", "HF_API_SECRET", "HIGGSFIELD_API_SECRET"))
     higgsfield_base_url: str = "https://api.higgsfield.ai"
-    higgsfield_model: str = "bytedance/seedance-2.0/reference-to-video"
-    higgsfield_resolution: Literal["480p", "720p", "1080p", "4k"] = "1080p"
-    higgsfield_generate_audio: bool = False
+    # Cost-saving defaults (see app/services/higgsfield/models.py). A model chosen in the UI
+    # after the free cost comparison overrides this until the server restarts.
+    higgsfield_model: str = "xai/grok-imagine-video/v1.5/reference-to-video"
+    # Optional override. Values above 720p are ignored; empty = the model's cheapest tier.
+    higgsfield_resolution: str = ""
+    # "minimum" = always the model's shortest supported clip (cheapest);
+    # "scene" = the scene's own length. The editor stretches/holds short clips server-side.
+    higgsfield_duration_policy: Literal["minimum", "scene"] = "minimum"
     higgsfield_poll_timeout_seconds: int = 900
-    max_clips_per_job: int = 6
+    # Live jobs are limited to this many generated scenes (1 = test one scene at a time).
+    max_clips_per_job: int = 1
+    # Approval is refused if the free estimate for a job exceeds this amount (USD).
+    max_usd_per_job: float = 1.0
 
     # Video
     ffmpeg_binary: str = "ffmpeg"
+    ffprobe_binary: str = "ffprobe"
     video_width: int = 1080
     video_height: int = 1920
     video_fps: int = 30

@@ -44,11 +44,11 @@ class MockHiggsfieldClient(VideoGenerator):
             on_status("in_progress", request_id)
         s = get_settings()
         color = _COLORS[(n - 1) % len(_COLORS)]
-        label = f"MOCK SEOA CLIP {n}  refs={len(req.reference_urls)}"
+        label = f"MOCK SEOA CLIP {n}  {req.duration}s {req.resolution or ''}  refs={len(req.reference_urls)}"
         base = [s.ffmpeg_binary, "-y", "-hide_banner", "-loglevel", "error",
                 "-f", "lavfi", "-i",
-                f"color=c={color}:s={s.video_width}x{s.video_height}:r={s.video_fps}:d={req.duration_seconds}"]
-        tail = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-t", str(req.duration_seconds), str(output_path)]
+                f"color=c={color}:s={s.video_width}x{s.video_height}:r={s.video_fps}:d={req.duration}"]
+        tail = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-t", str(req.duration), str(output_path)]
         text = (f"drawtext=text='{label}':fontcolor=white@0.85:fontsize=48:"
                 "x=(w-text_w)/2:y=h*0.12:box=1:boxcolor=black@0.35:boxborderw=20")
         try:

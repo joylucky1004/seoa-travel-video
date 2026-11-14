@@ -10,16 +10,17 @@ Implemented from https://docs.higgsfield.ai (checked 2026-11):
   - Status             GET /requests/{request_id}/status
                        status ∈ queued | in_progress | completed | failed | nsfw | canceled
                        completed video → {"video": {"url": ...}}
-  - Default model      bytedance/seedance-2.0/reference-to-video
-                       body: prompt, image_urls (1–9), duration (int 4–15), aspect_ratio ("9:16"),
-                       resolution (480p|720p|1080p|4k), generate_audio (bool); additionalProperties=false
+  - Models             per-model request bodies live in models.py (cheapest settings only)
 
 Paid calls are guarded twice: HIGGSFIELD_MODE=live AND ALLOW_PAID_API_CALLS=true,
 and the pipeline additionally waits for a per-job approval in the UI.
+Generation submits are NEVER retried automatically (credit safety); only status polling,
+uploads and free estimates are retried on transient errors.
 """
 from __future__ import annotations
 
-import math
+import hashlib
+import json
 import random
 import subprocess
 import tempfile
@@ -32,6 +33,7 @@ from app.config import Settings
 
 from .base import (GenerationError, GenerationRequest, GenerationResult, StatusCallback,
                    VideoGenerator)
+from .models import build_arguments, get_profile
 
 
 class PaidCallsDisabledError(RuntimeError):
@@ -52,9 +54,8 @@ class HiggsfieldAPIError(RuntimeError):
 TERMINAL = {"completed", "failed", "nsfw", "canceled"}
 _CONTENT_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
                   ".webp": "image/webp", ".gif": "image/gif"}
-# Field names accepted by the reference-to-video schema (additionalProperties: false).
-_MAX_REFERENCE_IMAGES = 9
-_MIN_DURATION, _MAX_DURATION = 4, 15
+_MAX_REFERENCE_IMAGES = 10
+_UPLOAD_CACHE_TTL = 3600  # seconds; reuse uploaded reference URLs instead of re-uploading
 
 
 def _error_detail(resp: httpx.Response) -> str:
@@ -72,8 +73,10 @@ class LiveHiggsfieldClient(VideoGenerator):
     mock = False
 
     def __init__(self, settings: Settings, transport: httpx.BaseTransport | None = None,
-                 sleep=time.sleep) -> None:
-        if not settings.is_live:
+                 sleep=time.sleep, estimate_only: bool = False) -> None:
+        """estimate_only=True allows free uploads/estimates without the live switches;
+        submit() is then refused."""
+        if not settings.is_live and not estimate_only:
             raise PaidCallsDisabledError(
                 "Live Higgsfield calls are disabled. Set HIGGSFIELD_MODE=live and "
                 "ALLOW_PAID_API_CALLS=true to enable (this spends credits).")
@@ -82,9 +85,9 @@ class LiveHiggsfieldClient(VideoGenerator):
             raise PaidCallsDisabledError(
                 "Higgsfield credentials are missing or incomplete. Set HF_API_KEY=KEY_ID:KEY_SECRET "
                 "(or HF_API_KEY_ID and HF_API_KEY_SECRET).")
+        self._estimate_only = estimate_only or not settings.is_live
         self._s = settings
         self._base = settings.higgsfield_base_url.rstrip("/")
-        self._model = settings.higgsfield_model.strip("/")
         self._sleep = sleep
         self._api = httpx.Client(base_url=self._base, transport=transport,
                                  headers={"Authorization": f"Key {credentials}"},
@@ -142,40 +145,54 @@ class LiveHiggsfieldClient(VideoGenerator):
             if tmp:
                 tmp.unlink(missing_ok=True)
 
+    def _cache_file(self) -> Path:
+        return self._s.data_path / "ref_upload_cache.json"
+
     def prepare_references(self, paths: list[Path]) -> list[str]:
+        """Uploads reference images, reusing URLs uploaded within the last hour."""
         if not paths:
             raise ValueError("SEOA 레퍼런스 이미지를 1장 이상 등록해야 실제 영상을 만들 수 있습니다.")
-        return [self._upload_one(p) for p in paths[:_MAX_REFERENCE_IMAGES]]
+        cache_path = self._cache_file()
+        try:
+            cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            cache = {}
+        now, urls = time.time(), []
+        for p in paths[:_MAX_REFERENCE_IMAGES]:
+            digest = hashlib.sha256(p.read_bytes()).hexdigest()
+            hit = cache.get(digest)
+            if hit and now - hit["ts"] < _UPLOAD_CACHE_TTL:
+                urls.append(hit["url"])
+                continue
+            url = self._upload_one(p)
+            cache[digest] = {"url": url, "ts": now}
+            urls.append(url)
+        cache_path.write_text(json.dumps(cache), encoding="utf-8")
+        return urls
 
     # -- generation ---------------------------------------------------------
     def build_arguments(self, req: GenerationRequest) -> dict:
         if req.aspect_ratio != "9:16":
             raise ValueError("Only 9:16 is supported")
-        if not req.reference_urls:
-            raise ValueError("reference_urls is empty")
-        prompt = req.prompt
-        if req.negative_prompt:  # the schema has no negative_prompt field
-            prompt += f"\nAvoid: {req.negative_prompt}"
-        duration = min(max(math.ceil(req.duration_seconds), _MIN_DURATION), _MAX_DURATION)
-        return {
-            "prompt": prompt,
-            "image_urls": req.reference_urls[:_MAX_REFERENCE_IMAGES],
-            "duration": duration,
-            "aspect_ratio": "9:16",
-            "resolution": self._s.higgsfield_resolution,
-            "generate_audio": self._s.higgsfield_generate_audio,
-        }
+        profile = get_profile(req.model)  # unknown / unapproved models are refused
+        return build_arguments(profile, prompt=req.prompt, negative_prompt=req.negative_prompt,
+                               reference_urls=req.reference_urls, duration=req.duration,
+                               resolution=req.resolution)
 
     def estimate_usd(self, req: GenerationRequest) -> float | None:
-        data = self._call("POST", f"/estimate/{self._model}", json=self.build_arguments(req))
+        """Free: POST /estimate/{model}. Nothing is generated."""
+        data = self._call("POST", f"/estimate/{req.model}", json=self.build_arguments(req))
         try:
             return float(data["usd"])
         except (KeyError, TypeError, ValueError):
             return None
 
     def submit(self, req: GenerationRequest, idempotency_key: str) -> str:
-        data = self._call("POST", f"/{self._model}", json=self.build_arguments(req),
-                          headers={"Idempotency-Key": idempotency_key})
+        """Paid. Sent exactly once — no automatic retry, never a different model."""
+        if self._estimate_only:
+            raise PaidCallsDisabledError("This client was created for estimates only.")
+        data = self._call("POST", f"/{req.model}", json=self.build_arguments(req),
+                          headers={"Idempotency-Key": idempotency_key}, retries=0)
         return data["request_id"]
 
     def status(self, request_id: str) -> dict:
