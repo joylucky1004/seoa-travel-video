@@ -1,7 +1,8 @@
 from app.config import Settings
 
-from .base import GenerationRequest, GenerationResult, VideoGenerator
-from .live import LiveHiggsfieldClient, PaidCallsDisabledError
+from .base import (GenerationError, GenerationRequest, GenerationResult, StatusCallback,
+                   VideoGenerator)
+from .live import HiggsfieldAPIError, LiveHiggsfieldClient, PaidCallsDisabledError
 from .mock import MockHiggsfieldClient
 
 
@@ -12,5 +13,6 @@ def get_generator(settings: Settings) -> VideoGenerator:
     return MockHiggsfieldClient()
 
 
-__all__ = ["GenerationRequest", "GenerationResult", "VideoGenerator", "LiveHiggsfieldClient",
-           "MockHiggsfieldClient", "PaidCallsDisabledError", "get_generator"]
+__all__ = ["GenerationError", "GenerationRequest", "GenerationResult", "HiggsfieldAPIError",
+           "LiveHiggsfieldClient", "MockHiggsfieldClient", "PaidCallsDisabledError",
+           "StatusCallback", "VideoGenerator", "get_generator"]

@@ -4,9 +4,9 @@ SEOA 캐릭터가 등장하는 여행 인스타그램 릴스(9:16)를 자동으�
 **Claude Code**로 개발하고, **공식 Higgsfield API**로 AI 영상을 만든 뒤, **Python + FFmpeg**로
 편집 · 한국어 자막 · 마지막 CTA(`Follow @staypick.kr`)까지 자동으로 처리합니다.
 
-> ⚠️ 현재 버전(v0.1)은 **Mock 모드 전용 프로토타입**입니다. Higgsfield API를 호출하지 않으며
-> 크레딧이 전혀 사용되지 않습니다. Mock 모드에서는 FFmpeg가 색상 화면으로 된 임시 클립을 만들어
-> 전체 흐름(입력 → 프롬프트 → 편집 → 자막 → CTA)을 무료로 테스트할 수 있습니다.
+> ⚠️ 기본값은 **Mock 모드**입니다. Higgsfield API를 호출하지 않으므로 크레딧이 사용되지 않습니다.
+> Mock 모드에서는 FFmpeg가 색상 화면으로 된 임시 클립을 만들어 전체 흐름을 무료로 테스트합니다.
+> 실제 생성(Live 모드)은 환경변수 두 개를 켜고, 작업마다 **예상 비용을 확인한 뒤 승인**해야 시작됩니다.
 
 ## 주요 기능
 
@@ -15,8 +15,11 @@ SEOA 캐릭터가 등장하는 여행 인스타그램 릴스(9:16)를 자동으�
 | iPad에서 쓰는 웹 화면 (Safari, 홈 화면 추가 지원) | ✅ |
 | SEOA 레퍼런스 이미지 업로드 / 삭제 | ✅ |
 | 캐릭터 일관성 규칙 편집 → 모든 프롬프트에 자동 삽입 | ✅ |
-| 9:16 (1080×1920) 영상 생성 파이프라인 | ✅ (Mock) |
-| Higgsfield 공식 API 연동 | 🟡 구조만 준비 (`live.py` 스켈레톤) |
+| 9:16 (1080×1920) 영상 생성 파이프라인 | ✅ |
+| Higgsfield 공식 API 연동 (Seedance 2.0 Reference-to-Video) | ✅ 실제 생성은 승인 후 |
+| 작업 전 무료 비용 견적 → iPad에서 승인 / 취소 | ✅ |
+| 장면별 생성 상태 · 오류 표시, 실패 장면만 다시 시도 | ✅ |
+| 장면 클립 · 최종 릴스 MP4 다운로드 | ✅ |
 | FFmpeg 자동 편집 (정규화 · 이어붙이기 · 인코딩) | ✅ |
 | 한국어 자막 자동 삽입 (ASS / libass) | ✅ |
 | 엔딩 CTA “Follow @staypick.kr” | ✅ |
@@ -89,6 +92,35 @@ pip install -r requirements.txt
 한글 폰트 파일을 넣고, `.env`의 `SUBTITLE_FONT_NAME`을 폰트 이름과 맞춰주세요.
 폰트가 없으면 시스템에 설치된 한글 폰트로 대체됩니다.
 
+## Higgsfield Live 모드 설정 (Render)
+
+공식 문서(https://docs.higgsfield.ai) 기준으로 구현했습니다.
+
+| 항목 | 값 |
+|---|---|
+| API 주소 | `https://api.higgsfield.ai` |
+| 인증 | `Authorization: Key KEY_ID:KEY_SECRET` (서버에서만 사용) |
+| 기본 모델 | `bytedance/seedance-2.0/reference-to-video` |
+| 전달 값 | 프롬프트(카메라 무빙 포함), 레퍼런스 이미지 최대 9장, 길이 4–15초, `9:16`, 해상도 |
+| 흐름 | 레퍼런스 업로드 → 비용 견적(무료) → **승인** → 생성 요청 → 상태 확인 → 다운로드 → FFmpeg 편집 |
+
+Render 대시보드 → 서비스 → **Environment**에서 아래 값을 설정합니다.
+
+| 변수 | 설명 |
+|---|---|
+| `HF_API_KEY` | Higgsfield Console의 키 ID와 시크릿을 `KEY_ID:KEY_SECRET` 형태로 입력 (또는 `HF_API_KEY_ID` + `HF_API_KEY_SECRET`) |
+| `APP_PASSWORD` | **필수.** 없으면 Live 모드에서 작업이 거부됩니다 (아이디 `seoa`) |
+| `HIGGSFIELD_MODE` | `live` |
+| `ALLOW_PAID_API_CALLS` | `true` |
+| `HIGGSFIELD_RESOLUTION` | 선택. 기본 `1080p` (`480p`/`720p`/`1080p`/`4k`) |
+
+설정 후에도 영상은 자동으로 만들어지지 않습니다. 작업 목록에서 예상 비용을 확인하고
+**승인하고 생성**을 눌러야 크레딧이 사용됩니다. 실패하거나 검수(NSFW)에 걸린 요청은
+Higgsfield가 과금하지 않습니다.
+
+> Render 무료 플랜은 디스크가 영구적이지 않아 재시작 · 재배포 시 레퍼런스 이미지와 결과물이 지워집니다.
+> 완성된 영상은 바로 다운로드하세요. Higgsfield 쪽 결과 파일도 7일 후 삭제됩니다.
+
 ## 보안 · 크레딧 안전장치
 
 - API 키는 **`.env`에만** 저장하며 `.gitignore`로 git에서 제외됩니다. 코드에서는 `SecretStr`로 감싸
@@ -96,7 +128,10 @@ pip install -r requirements.txt
 - 실제 Higgsfield 호출은 **두 가지 스위치가 모두 켜져야만** 가능합니다.
   - `HIGGSFIELD_MODE=live`
   - `ALLOW_PAID_API_CALLS=true`
+- 두 스위치가 켜져 있어도 작업마다 **iPad에서 승인**해야 생성 요청이 전송됩니다.
+- Live 모드는 `APP_PASSWORD`가 설정되어 있어야만 동작합니다 (URL만 알면 크레딧을 쓰는 상황 방지).
 - Live 모드에서도 `MAX_CLIPS_PER_JOB`로 작업당 클립 수를 제한합니다.
+- 브라우저에는 키가 전달되지 않으며 `/api/status`는 키 설정 여부(ok / incomplete / missing)만 알려줍니다.
 - 레퍼런스 이미지(`assets/characters/seoa/references/`)와 결과물(`data/`)은 git에 올라가지 않습니다.
 
 ## 영상 처리 흐름
@@ -128,8 +163,8 @@ python -m pytest -q
 
 ## 다음 단계 (제안)
 
-1. Higgsfield 공식 API 문서를 확인하고 `app/services/higgsfield/live.py` 구현
-2. 짧은 클립 1개로 Live 모드 테스트 (크레딧 사용 전 승인)
+1. 짧은 장면 1개로 Live 모드 첫 테스트 (승인 후)
+2. 레퍼런스 이미지 · 결과물을 영구 저장소로 옮기기 (Render 디스크 또는 외부 스토리지)
 3. 배경음악 · 효과음 믹싱
 4. Claude로 장소 정보 → 장면 구성/자막 자동 작성
 5. 원격 접속이 필요하면 배포 (HTTPS + 인증)

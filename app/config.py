@@ -9,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -26,12 +26,22 @@ class Settings(BaseSettings):
     app_port: int = 8000
     app_password: SecretStr | None = None
 
-    # Higgsfield
+    # Higgsfield (official API: https://docs.higgsfield.ai)
     higgsfield_mode: Literal["mock", "live"] = "mock"
     allow_paid_api_calls: bool = False
-    higgsfield_api_key: SecretStr | None = None
-    higgsfield_api_secret: SecretStr | None = None
-    higgsfield_base_url: str = "https://platform.higgsfield.ai"
+    # Credentials: either HF_API_KEY="KEY_ID:KEY_SECRET" (same format as the official SDK's HF_KEY),
+    # or HF_API_KEY_ID + HF_API_KEY_SECRET. Never sent to the browser.
+    higgsfield_api_key: SecretStr | None = Field(
+        None, validation_alias=AliasChoices("HF_API_KEY", "HF_KEY", "HIGGSFIELD_API_KEY"))
+    higgsfield_api_key_id: SecretStr | None = Field(
+        None, validation_alias=AliasChoices("HF_API_KEY_ID", "HIGGSFIELD_API_KEY_ID"))
+    higgsfield_api_secret: SecretStr | None = Field(
+        None, validation_alias=AliasChoices("HF_API_KEY_SECRET", "HF_API_SECRET", "HIGGSFIELD_API_SECRET"))
+    higgsfield_base_url: str = "https://api.higgsfield.ai"
+    higgsfield_model: str = "bytedance/seedance-2.0/reference-to-video"
+    higgsfield_resolution: Literal["480p", "720p", "1080p", "4k"] = "1080p"
+    higgsfield_generate_audio: bool = False
+    higgsfield_poll_timeout_seconds: int = 900
     max_clips_per_job: int = 6
 
     # Video
@@ -45,6 +55,8 @@ class Settings(BaseSettings):
 
     # Storage
     data_dir: Path = Path("data")
+    # Optional override for where SEOA reference images live (e.g. a persistent disk).
+    references_dir: Path | None = None
 
     # Derived paths -------------------------------------------------------
     @property
@@ -69,9 +81,31 @@ class Settings(BaseSettings):
 
     @property
     def references_path(self) -> Path:
-        p = self.character_dir / "references"
+        p = self.references_dir or self.character_dir / "references"
         p.mkdir(parents=True, exist_ok=True)
         return p
+
+    def higgsfield_credentials(self) -> str | None:
+        """Returns 'KEY_ID:KEY_SECRET' for the Authorization header, or None."""
+        key = self.higgsfield_api_key.get_secret_value().strip() if self.higgsfield_api_key else ""
+        key_id = self.higgsfield_api_key_id.get_secret_value().strip() if self.higgsfield_api_key_id else ""
+        secret = self.higgsfield_api_secret.get_secret_value().strip() if self.higgsfield_api_secret else ""
+        if key_id and secret:
+            return f"{key_id}:{secret}"
+        if key and ":" in key:
+            return key
+        if key and secret:
+            return f"{key}:{secret}"
+        return None
+
+    @property
+    def credentials_status(self) -> str:
+        """Human-readable, secret-free description of the credential setup."""
+        if self.higgsfield_credentials():
+            return "ok"
+        if self.higgsfield_api_key or self.higgsfield_api_key_id:
+            return "incomplete"  # key present but the secret part is missing
+        return "missing"
 
     @property
     def is_live(self) -> bool:

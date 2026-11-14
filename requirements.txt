@@ -5,8 +5,8 @@ pydantic-settings>=2.3
 python-multipart>=0.0.9
 jinja2>=3.1
 PyYAML>=6.0
-# Will be used by the live Higgsfield client once implemented:
-# httpx>=0.27
+# Official Higgsfield REST API client
+httpx>=0.27
 
 # Dev / tests
 pytest>=8.0

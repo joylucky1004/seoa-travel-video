@@ -27,10 +27,23 @@ class ReelRequest(BaseModel):
 
 class JobStatus(str, Enum):
     queued = "queued"
+    estimating = "estimating"            # live: uploading references + cost estimate (free)
+    awaiting_approval = "awaiting_approval"  # live: waiting for the user to approve paid generation
     generating = "generating"
     editing = "editing"
     done = "done"
     failed = "failed"
+    canceled = "canceled"
+
+
+class SceneState(BaseModel):
+    index: int
+    status: str = "pending"  # pending | submitted | queued | in_progress | completed | failed | nsfw | canceled | timeout
+    request_id: str | None = None
+    idempotency_key: str | None = None
+    estimate_usd: float | None = None
+    error: str = ""
+    clip_ready: bool = False
 
 
 class ClipResult(BaseModel):
@@ -48,6 +61,8 @@ class Job(BaseModel):
     mode: str = "mock"
     progress: float = 0.0
     message: str = ""
+    scenes: list[SceneState] = []
+    estimate_total_usd: float | None = None
     clips: list[ClipResult] = []
     output_path: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

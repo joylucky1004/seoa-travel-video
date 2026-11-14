@@ -64,7 +64,7 @@ def test_mock_pipeline_end_to_end():
     reel = ReelRequest(title="e2e", scenes=[Scene(visual_prompt="SEOA walks", subtitle_ko="제주 도착",
                                                   duration_seconds=2)])
     job = pipeline.create_job(reel)
-    pipeline.run_job(job.id)
+    pipeline.run_generation(job.id)
     done = pipeline.load_job(job.id)
     assert done.status == "done", done.message
     assert done.clips[0].mock is True
