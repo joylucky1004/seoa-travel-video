@@ -1,0 +1,34 @@
+# SEOA — character bible used to keep every generated clip consistent.
+# Edit freely. Values here are injected into every Higgsfield prompt.
+# You can also edit the consistency rules from the web UI (saved to data/character.json,
+# which overrides this file without touching git).
+
+name: SEOA
+handle: "@staypick.kr"
+summary: >-
+  A Korean woman in her mid-20s who travels around Korea and Asia,
+  discovering beautiful stays, cafes and hidden local spots.
+
+appearance:
+  - "Korean woman, mid-20s, natural slim build"
+  - "Long straight dark-brown hair, soft see-through bangs"
+  - "Clear fair skin, natural soft makeup, warm friendly smile"
+  - "Same face, same hairstyle and same facial proportions in every shot"
+
+default_outfit: "Cream knit cardigan over a white top, light-wash wide denim, white sneakers"
+
+consistency_rules:
+  - "Always match the face in the attached SEOA reference images exactly"
+  - "Do not change hair color, hair length, or facial features between scenes"
+  - "Only one SEOA in frame; no look-alikes or twins"
+  - "Natural, candid travel-vlog body language; never overly posed"
+  - "Hands and fingers natural and anatomically correct"
+
+negative:
+  - "different person, face change, distorted face, extra fingers"
+  - "text, watermark, logo, captions burned into the AI clip"
+  - "cartoon, anime, plastic skin, heavy filters"
+
+visual_style: >-
+  Cinematic vertical 9:16 travel reel, soft natural light, warm film tones,
+  shallow depth of field, smooth handheld or gimbal camera, Instagram Reels quality.

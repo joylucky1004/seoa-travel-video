@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="SEOA Reels">
+  <meta name="theme-color" content="#111318">
+  <title>SEOA Reels Studio</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>SEOA Reels Studio</h1>
+  <span id="mode-badge" class="badge {{ 'live' if mode == 'LIVE' else 'mock' }}">{{ mode }} MODE</span>
+</header>
+
+<main class="grid">
+  <!-- Character -->
+  <section class="card">
+    <h2>SEOA 캐릭터</h2>
+    <p class="hint">얼굴이 잘 보이는 정면·측면 사진 3~6장을 권장합니다. 이미지는 서버에만 저장되고 git에는 올라가지 않습니다.</p>
+    <div id="refs" class="refs"></div>
+    <label class="btn secondary file-btn">
+      레퍼런스 이미지 추가
+      <input id="ref-input" type="file" accept="image/*" multiple hidden>
+    </label>
+
+    <label for="outfit">기본 의상</label>
+    <input id="outfit" type="text">
+    <label for="rules">캐릭터 일관성 규칙 (한 줄에 하나)</label>
+    <textarea id="rules" rows="7"></textarea>
+    <button id="save-character" class="btn secondary">규칙 저장</button>
+  </section>
+
+  <!-- Reel builder -->
+  <section class="card">
+    <h2>새 릴스 (9:16)</h2>
+    <label for="title">제목</label>
+    <input id="title" type="text" value="제주 애월 감성 숙소 브이로그">
+    <label for="location">장소</label>
+    <input id="location" type="text" value="Jeju Aewol, Korea">
+    <label for="style">추가 스타일 메모</label>
+    <input id="style" type="text" placeholder="예: golden hour, 따뜻한 필름 톤">
+    <label for="extra-rules">이번 릴스 전용 일관성 메모</label>
+    <input id="extra-rules" type="text" placeholder="예: 흰색 원피스 착용">
+
+    <div class="scenes-head">
+      <h3>장면</h3>
+      <button id="add-scene" class="btn secondary small">+ 장면 추가</button>
+    </div>
+    <div id="scenes"></div>
+
+    <label class="check"><input id="add-cta" type="checkbox" checked> 마지막에 CTA “<span id="cta-text">Follow @staypick.kr</span>” 추가</label>
+    <button id="create-job" class="btn primary">릴스 만들기</button>
+    <p id="form-msg" class="hint"></p>
+  </section>
+
+  <!-- Jobs -->
+  <section class="card wide">
+    <h2>작업 목록</h2>
+    <div id="jobs"></div>
+  </section>
+</main>
+
+<template id="scene-tpl">
+  <div class="scene">
+    <div class="scene-top">
+      <strong class="scene-no"></strong>
+      <select class="duration"><option value="5">5초</option><option value="8">8초</option><option value="10">10초</option></select>
+      <button class="btn danger small remove">삭제</button>
+    </div>
+    <textarea class="visual" rows="2" placeholder="영상 내용 (예: SEOA opens the curtains revealing an ocean view)"></textarea>
+    <input class="camera" type="text" placeholder="카메라 무빙 (선택, 예: slow dolly in)">
+    <input class="subtitle" type="text" maxlength="120" placeholder="한국어 자막">
+  </div>
+</template>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

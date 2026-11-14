@@ -1,0 +1,23 @@
+# Output presets for FFmpeg rendering. Instagram Reels: 1080x1920, 9:16, H.264 + AAC.
+reels_9x16:
+  width: 1080
+  height: 1920
+  fps: 30
+  video_codec: libx264
+  crf: 18
+  preset: medium
+  pix_fmt: yuv420p
+  audio_codec: aac
+  audio_bitrate: 192k
+
+subtitles:
+  font_size: 64
+  outline: 4
+  shadow: 1
+  margin_v: 360          # keep clear of the Reels UI at the bottom
+  primary_color: "&H00FFFFFF"
+  outline_color: "&H00000000"
+
+cta:
+  font_size: 84
+  background_color: "0x111111"
